@@ -1,0 +1,7 @@
+{
+	"scripts": {
+		"serial": "pio device monitor -b 115200",
+		"gps": "pio run -t upload -e gps",
+		"lora": "pio run -t upload -e lora"
+	}
+}
