@@ -1,0 +1,28 @@
+Language: Cpp
+BasedOnStyle: Google
+
+# StandardJS Indentation (2 spaces, no tabs)
+IndentWidth: 2
+UseTab: Never
+
+# Column Limit: 0 disables the 80-column rule and respects manual wrapping
+ColumnLimit: 0
+
+# Spacing: StandardJS uses space before function parentheses
+SpaceBeforeParens: Always
+
+# Braces: StandardJS uses "One True Brace Style" (1TBS)
+BreakBeforeBraces: Attach
+AllowShortBlocksOnASingleLine: true
+AllowShortFunctionsOnASingleLine: Empty
+
+# Cleanliness: StandardJS-like spacing
+SpaceAfterCStyleCast: true
+SpaceAroundPointerQualifiers: Both
+PointerAlignment: Left
+
+# Alignment: Avoid "vertical alignment" which StandardJS dislikes
+AlignAfterOpenBracket: DontAlign
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignOperands: false

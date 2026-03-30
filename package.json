@@ -2,6 +2,7 @@
 	"scripts": {
 		"serial": "pio device monitor -b 115200",
 		"gps": "pio run -t upload -e gps",
+		"input": "pio run -t upload -e input",
 		"lora": "pio run -t upload -e lora"
 	}
 }
