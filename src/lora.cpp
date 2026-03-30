@@ -27,24 +27,10 @@ String log_lines[MAX_LOG];
 int log_count = 0;
 
 volatile bool rx_flag = false;
+int i = 0;
 
 void IRAM_ATTR on_receive() {
   rx_flag = true;
-}
-
-void redraw();
-
-void add_log(const String& line) {
-  if (log_count < MAX_LOG) {
-    log_lines[log_count++] = line;
-  } else {
-    // scroll up
-    for (int i = 0; i < MAX_LOG - 1; i++) {
-      log_lines[i] = log_lines[i + 1];
-    }
-    log_lines[MAX_LOG - 1] = line;
-  }
-  redraw();
 }
 
 void redraw() {
@@ -60,7 +46,18 @@ void redraw() {
   c.pushSprite(0, 0);
 }
 
-int i = 0;
+void add_log(const String& line) {
+  if (log_count < MAX_LOG) {
+    log_lines[log_count++] = line;
+  } else {
+    // scroll up
+    for (int i = 0; i < MAX_LOG - 1; i++) {
+      log_lines[i] = log_lines[i + 1];
+    }
+    log_lines[MAX_LOG - 1] = line;
+  }
+  redraw();
+}
 
 void setup() {
   auto cfg = M5.config();
@@ -90,12 +87,10 @@ void setup() {
   redraw();
 }
 
-int i=0;
-
 void loop() {
   M5.update();
 
-  add_log(String(i));
+  add_log(String(i++));
   delay(1000);
   c.pushSprite(0, 0);
 
