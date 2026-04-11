@@ -11,7 +11,7 @@ These are all verified working:
 - [sd](./src/sd) - test microSD
 - [sound](./src/sound) - test microphone/speaker
 
-These use Lora Cap 1262](https://docs.m5stack.com/en/cap/Cap_LoRa-1262):
+These use [Lora Cap 1262](https://docs.m5stack.com/en/cap/Cap_LoRa-1262):
 
 - [lora](./src/lora) - test LoRA
 - [gps](./src/gps) - test GPS
