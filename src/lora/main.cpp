@@ -1,117 +1,183 @@
-#include "M5Unified.h"
+// LoRa TX/RX test for CardputerADV + LoRa Cap 1262
+// PI4IOE5V6408 port expander: P0 = antenna enable, P7 = RX enable
+
+#include <M5Unified.h>
 #include <RadioLib.h>
-#include <SPI.h>
+#include "utility/PI4IOE5V6408_Class.hpp"
 
-#define LORA_TX_POWER     22
-#define LORA_PREAMBLE_LEN 20
-
-// Reticulum defaults
 #define LORA_BW           125.0f
-#define LORA_SYNC_WORD    0x12
 #define LORA_SF           7
 #define LORA_CR           5
-
-// US
 #define LORA_FREQ         915.0
+#define LORA_SYNC_WORD    0x12
+#define LORA_TX_POWER     0
+#define LORA_PREAMBLE_LEN 6
 
-// Cardputer SPI bus: SCK=40, MOSI=14, MISO=39
-// GPS 1262 CAP LoRa pins: NSS=5, IRQ=4, RST=3, BUSY=6
-SPIClass spi(HSPI);
-SX1262 radio = new Module(5, 4, 3, 6, spi);
+SX1262 radio = new Module(GPIO_NUM_5, GPIO_NUM_4, GPIO_NUM_3, GPIO_NUM_6);
+m5::PI4IOE5V6408_Class ioe(0x43, 400000, &m5::In_I2C);
+
+volatile bool receivedFlag = false;
+volatile bool transmittedFlag = false;
+
+#if defined(ESP32)
+IRAM_ATTR
+#endif
+void setRxFlag(void) { receivedFlag = true; }
+
+#if defined(ESP32)
+IRAM_ATTR
+#endif
+void setTxFlag(void) { transmittedFlag = true; }
 
 M5Canvas c(&M5.Display);
 
-// Log of received packets shown on screen
-#define MAX_LOG 11
-String log_lines[MAX_LOG];
-int log_count = 0;
+uint32_t txCount = 0;
+unsigned long lastTxMs = 0;
+bool isTxing = false;
 
-volatile bool rx_flag = false;
-int i = 0;
+#define MAX_LOG 10
+String logLines[MAX_LOG];
+int logCount = 0;
 
-void IRAM_ATTR on_receive() {
-  rx_flag = true;
+void addLog(const String& s) {
+  if (logCount < MAX_LOG) logLines[logCount++] = s;
+  else {
+    for (int i = 0; i < MAX_LOG - 1; i++) logLines[i] = logLines[i + 1];
+    logLines[MAX_LOG - 1] = s;
+  }
 }
 
 void redraw() {
   c.fillScreen(BLACK);
   c.setCursor(4, 4);
   c.setTextColor(TFT_CYAN);
-  c.print("LoRa RX  915MHz SF7 BW125");
+  c.printf("LoRa %.0fMHz SF%d BW%.0f", LORA_FREQ, LORA_SF, LORA_BW);
   c.setTextColor(WHITE);
-  for (int i = 0; i < log_count; i++) {
+  for (int i = 0; i < logCount; i++) {
     c.setCursor(4, 16 + i * 10);
-    c.print(log_lines[i]);
+    c.print(logLines[i]);
   }
   c.pushSprite(0, 0);
 }
 
-void add_log(const String& line) {
-  if (log_count < MAX_LOG) {
-    log_lines[log_count++] = line;
-  } else {
-    // scroll up
-    for (int i = 0; i < MAX_LOG - 1; i++) {
-      log_lines[i] = log_lines[i + 1];
-    }
-    log_lines[MAX_LOG - 1] = line;
-  }
-  redraw();
+void setAntenna(bool rxMode) {
+  // P7 controls FM8625H RF switch: HIGH=RX, LOW=TX
+  ioe.digitalWrite(7, rxMode);
+}
+
+void startListening() {
+  setAntenna(true);
+  delay(2);  // Let FM8625H RF switch settle after I2C command
+  radio.setPacketReceivedAction(setRxFlag);
+  radio.startReceive();
+  isTxing = false;
 }
 
 void setup() {
-  auto cfg = M5.config();
-  M5.begin(cfg);
+  M5.begin();
+  Serial.begin(115200);
 
   c.createSprite(M5.Display.width(), M5.Display.height());
   c.setTextSize(1);
 
-  Serial.begin(115200);
+  // I2C for port expander
+  if (!m5::In_I2C.begin(I2C_NUM_0, 8, 9)) {
+    Serial.println("I2C init failed");
+  }
 
-  spi.begin(40, 39, 14, 5); // SCK, MISO, MOSI, SS
+  if (ioe.begin()) {
+    Serial.println("Port expander OK");
+    // P0 = antenna enable (always on)
+    ioe.setDirection(0, true);
+    ioe.setHighImpedance(0, false);
+    ioe.digitalWrite(0, true);
+    // P7 = RX/TX path select
+    ioe.setDirection(7, true);
+    ioe.setHighImpedance(7, false);
+    ioe.digitalWrite(7, true);  // Start in RX mode
+    Serial.println("Antenna: P0=HIGH (power), P7=HIGH (RX mode)");
+  } else {
+    Serial.println("Port expander not found!");
+  }
+
+  SPI.begin(40, 39, 14, 5);
 
   int state = radio.begin(LORA_FREQ, LORA_BW, LORA_SF, LORA_CR, LORA_SYNC_WORD, LORA_TX_POWER, LORA_PREAMBLE_LEN, 3.0, true);
   if (state != RADIOLIB_ERR_NONE) {
+    Serial.printf("Radio init failed: %d\n", state);
     c.fillScreen(BLACK);
     c.setCursor(4, 4);
     c.setTextColor(TFT_RED);
     c.printf("init failed: %d", state);
     c.pushSprite(0, 0);
-    while (true) { delay(1000); }
+    while (true) delay(1000);
   }
+  radio.setCurrentLimit(140);
+  radio.setDio2AsRfSwitch(false);  // FM8625H is on port expander, not DIO2
 
-  radio.setDio1Action(on_receive);
-  radio.startReceive();
+  Serial.printf("Radio OK: %.1fMHz BW=%.0f SF=%d CR=%d SW=0x%02X pwr=%d\n",
+    LORA_FREQ, LORA_BW, LORA_SF, LORA_CR, LORA_SYNC_WORD, LORA_TX_POWER);
 
-  add_log("init OK, listening...");
+  startListening();
+  addLog("Ready. TX every 10s.");
+  lastTxMs = millis();
   redraw();
 }
 
 void loop() {
   M5.update();
 
-  add_log(String(i++));
-  delay(1000);
-  c.pushSprite(0, 0);
+  // TX done
+  if (transmittedFlag) {
+    transmittedFlag = false;
+    radio.finishTransmit();
+    Serial.println("[TX] done, switching to RX");
+    startListening();  // Switches antenna back to RX
+    redraw();
+  }
 
-  if (rx_flag) {
-    rx_flag = false;
+  // RX
+  if (receivedFlag) {
+    receivedFlag = false;
 
-    String data;
-    int state = radio.readData(data);
+    String str;
+    int state = radio.readData(str);
 
-    if (state == RADIOLIB_ERR_NONE) {
+    if (state == RADIOLIB_ERR_NONE && str.length() > 0) {
       float rssi = radio.getRSSI();
-      float snr  = radio.getSNR();
-      Serial.printf("[RX] %s  RSSI:%.0f SNR:%.1f\n", data.c_str(), rssi, snr);
-      add_log(String("[") + (int)rssi + "dB] " + data);
+      float snr = radio.getSNR();
+      Serial.printf("[RX] \"%s\" RSSI:%.0f SNR:%.1f\n", str.c_str(), rssi, snr);
+      addLog(String("[") + (int)rssi + "dB] " + str);
     } else if (state == RADIOLIB_ERR_CRC_MISMATCH) {
-      add_log("CRC err");
-    } else {
-      add_log(String("rx err: ") + state);
+      Serial.println("[RX] CRC mismatch!");
+      addLog("CRC err");
+    } else if (state != RADIOLIB_ERR_NONE) {
+      Serial.printf("[RX] err: %d\n", state);
     }
 
+    startListening();
     redraw();
-    radio.startReceive();
   }
+
+  // TX every 10s
+  unsigned long now = millis();
+  if (!isTxing && (now - lastTxMs >= 10000)) {
+    String msg = String("cardputer ") + txCount++;
+
+    setAntenna(false);  // Switch to TX
+    radio.setPacketSentAction(setTxFlag);
+    int s = radio.startTransmit(msg);
+    if (s == RADIOLIB_ERR_NONE) {
+      isTxing = true;
+      Serial.printf("[TX] %s\n", msg.c_str());
+      addLog("TX: " + msg);
+      redraw();
+    } else {
+      Serial.printf("[TX] err: %d\n", s);
+      startListening();
+    }
+    lastTxMs = now;
+  }
+
+  delay(10);
 }
