@@ -1,23 +1,23 @@
-I wanted minimal examples that work for CardputerADV (with lora cap) since I kept having issues with the [provided examples](https://docs.m5stack.com/en/arduino/m5cardputer/program).
+I wanted reliable & simple standalone exmaples for [CardputerADV](https://docs.m5stack.com/en/core/Cardputer-Adv).
 
+These are all verified working:
 
-I wanted a quick & simple example, just to make sure my device works.
+- [battery](./src/battery) - test battery state
+- [button](./src/button) - test boot-button
+- [display](./src/display) - test screen
+- [ir](./src/ir) - test infared TX
+- [keyboard](./src/keyboard) - test keyboard
+- [motion](./src/motion) - test motion-sensors
+- [sd](./src/sd) - test microSD
+- [sound](./src/sound) - test microphone/speaker
 
+These use Lora Cap 1262](https://docs.m5stack.com/en/cap/Cap_LoRa-1262):
 
-You will need to install [platformio](https://platformio.org/install). I don't use VSCode, so I just did `pip install platfformio`
+- [lora](./src/lora) - test LoRA
+- [gps](./src/gps) - test GPS
 
-I like to wrap my examples in package.json, just so I don't have to remember how to call pio, but you can also just call the commands in there directly.
+You will need to install platformio:
 
 ```sh
-# lora radio receiver in US
-npm run lora
-
-# small gps demo that actually gets location
-npm run gps
-
-# if you need to look at serial-logging, I use some on gps
-npm run serial
+pip install platformio
 ```
-
-- GPS requierd me to go outside. It got a fix right away, and once it gets a fix, it gets it faster next time.
-- Lora is pre-configured for rnode (reticulum) default settings in US. that is just what I had around to test, so it was easy to send messages to it.
