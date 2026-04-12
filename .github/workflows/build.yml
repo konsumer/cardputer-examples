@@ -1,0 +1,48 @@
+name: PlatformIO Build
+
+on:
+  push:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio/.cache
+          key: ${{ runner.os }}-pio
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install PlatformIO Core
+        run: pip install --upgrade platformio
+
+      - name: Build PlatformIO Project
+        run: pio run
+
+      - name: Collect firmware binaries
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          shopt -s nullglob
+          for built_dir in .pio/build/*; do
+            if [[ -f "${built_dir}/firmware.bin" ]]; then
+              env_name="$(basename "${built_dir}")"
+              cp "${built_dir}/firmware.bin" "dist/${env_name}.bin"
+            fi
+          done
+          ls -al dist
+
+      - name: Upload firmware release assets
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.bin

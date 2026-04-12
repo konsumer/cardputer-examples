@@ -12,6 +12,7 @@ if not port:
     import serial.tools.list_ports
 
     for p in serial.tools.list_ports.comports():
+        # I could put more tests here...
         if "CP210" in (p.description or ""):
             port = p.device
             break
