@@ -296,7 +296,7 @@ void setup() {
   canvas.setTextScroll(true);
   canvas.fillSprite(BLACK);
 
-  say("System", "Radio task starting...", ORANGE);
+  say("System", "Radio ready.", ORANGE);
   drawPrompt();
 }
 
