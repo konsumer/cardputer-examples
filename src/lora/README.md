@@ -1,6 +1,6 @@
 # lora
 
-This is a basic lora RX/TX tester. It just sends and receives simple messages.
+This is an expansion of the UI idea in [keyboard](../keyboard/). It receives raw LoRA messages, and when you enter a message, it will send it.
 
 ```sh
 pio run --target upload --target monitor -e lora
