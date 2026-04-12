@@ -1,10 +1,18 @@
 // LoRa chat demo for CardputerADV + LoRa Cap 1262
-// PI4IOE5V6408 port expander: P0 = antenna enable, P7 = RX enable
+// Uses a dedicated FreeRTOS radio task that keeps SX1262 in RX except
+// during transmissions. The UI mirrors the simple chat layout from src/keyboard.
 
+#include <Arduino.h>
 #include "M5Unified.h"
-#include <M5Cardputer.h>
+#include "M5Cardputer.h"
 #include <RadioLib.h>
 #include "utility/PI4IOE5V6408_Class.hpp"
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <freertos/queue.h>
+
+#include <algorithm>
+#include <cstring>
 
 #define LORA_BW           125.0f
 #define LORA_SF           7
@@ -14,76 +22,96 @@
 #define LORA_TX_POWER     0
 #define LORA_PREAMBLE_LEN 6
 
+static constexpr size_t MAX_MESSAGE_LEN = 192;
+static constexpr uint8_t TX_QUEUE_DEPTH = 6;
+static constexpr uint8_t EVENT_QUEUE_DEPTH = 12;
+static constexpr uint32_t RADIO_TASK_STACK = 4096;
+static constexpr uint32_t RADIO_TASK_PRIORITY = 1;
+static constexpr uint32_t RADIO_TASK_DELAY_MS = 5;
+
 SX1262 radio = new Module(GPIO_NUM_5, GPIO_NUM_4, GPIO_NUM_3, GPIO_NUM_6);
 m5::PI4IOE5V6408_Class ioe(0x43, 400000, &m5::In_I2C);
 
-volatile bool receivedFlag = false;
-volatile bool transmittedFlag = false;
-
-#if defined(ESP32)
-IRAM_ATTR
-#endif
-void setRxFlag(void) { receivedFlag = true; }
-
-#if defined(ESP32)
-IRAM_ATTR
-#endif
-void setTxFlag(void) { transmittedFlag = true; }
-
-M5Canvas logCanvas(&M5Cardputer.Display);
+M5Canvas canvas(&M5Cardputer.Display);
 String inputBuffer;
-String pendingTxMessage;
-bool isTxing = false;
 
-constexpr int LOG_MARGIN = 8;
-constexpr int LOG_TOP = 24;
-constexpr int PROMPT_HEIGHT = 14;
+struct RadioJob {
+  char text[MAX_MESSAGE_LEN + 1];
+};
 
-void pushLogCanvas() {
-  logCanvas.pushSprite(LOG_MARGIN, LOG_TOP);
+enum class RadioEventType : uint8_t { Rx, TxOk, TxErr, Info };
+
+struct RadioEvent {
+  RadioEventType type;
+  char text[MAX_MESSAGE_LEN + 1];
+  float rssi;
+  float snr;
+  int status;
+};
+
+QueueHandle_t txQueue = nullptr;
+QueueHandle_t eventQueue = nullptr;
+TaskHandle_t radioTaskHandle = nullptr;
+
+void radioTask(void* arg);
+void restartReceive(const char* reason = nullptr);
+
+void copyToBuffer(char* dest, size_t size, const String& src) {
+  if (!dest || size == 0) {
+    return;
+  }
+  size_t len = src.length();
+  if (len >= size) {
+    len = size - 1;
+  }
+  memcpy(dest, src.c_str(), len);
+  dest[len] = '\0';
 }
 
-void drawChrome() {
-  M5Cardputer.Display.fillScreen(BLACK);
-  M5Cardputer.Display.setTextFont(1);
-  M5Cardputer.Display.setTextSize(1);
-  M5Cardputer.Display.setTextColor(ORANGE);
-  M5Cardputer.Display.drawCenterString("LoRa Chat", M5Cardputer.Display.width() / 2, 4);
-  M5Cardputer.Display.drawRect(4, LOG_TOP - 4,
-                               M5Cardputer.Display.width() - 8,
-                               M5Cardputer.Display.height() - (LOG_TOP + PROMPT_HEIGHT) - 2,
-                               BLUE);
-  pushLogCanvas();
-}
-
-void drawPrompt() {
-  int promptY = M5Cardputer.Display.height() - PROMPT_HEIGHT - 2;
-  M5Cardputer.Display.fillRect(0, promptY, M5Cardputer.Display.width(), PROMPT_HEIGHT + 2, BLACK);
-  M5Cardputer.Display.setCursor(4, promptY + 2);
-  M5Cardputer.Display.setTextColor(CYAN);
-  M5Cardputer.Display.printf("> %s", inputBuffer.c_str());
-}
-
-void appendLog(const String& name, const String& message, uint16_t nameColor = YELLOW) {
-  logCanvas.setTextColor(nameColor);
-  logCanvas.print(name);
-  logCanvas.print(": ");
-  logCanvas.setTextColor(WHITE);
-  logCanvas.println(message);
-  pushLogCanvas();
+void queueEvent(RadioEventType type, const String& text, float rssi = 0.0f, float snr = 0.0f, int status = 0) {
+  if (!eventQueue) {
+    return;
+  }
+  RadioEvent evt = {};
+  evt.type = type;
+  evt.rssi = rssi;
+  evt.snr = snr;
+  evt.status = status;
+  copyToBuffer(evt.text, sizeof(evt.text), text);
+  xQueueSend(eventQueue, &evt, 0);
 }
 
 void setAntenna(bool rxMode) {
   // P7 controls FM8625H RF switch: HIGH=RX, LOW=TX
   ioe.digitalWrite(7, rxMode);
+  delay(2);
 }
 
-void startListening() {
-  setAntenna(true);
-  delay(2);  // Let FM8625H RF switch settle after I2C command
-  radio.setPacketReceivedAction(setRxFlag);
-  radio.startReceive();
-  isTxing = false;
+void drawPrompt() {
+  int promptY = M5Cardputer.Display.height() - 12;
+  M5Cardputer.Display.fillRect(0, promptY, M5Cardputer.Display.width(), 12, BLACK);
+  M5Cardputer.Display.setCursor(4, promptY + 2);
+  M5Cardputer.Display.setTextColor(WHITE);
+  M5Cardputer.Display.printf("> %s", inputBuffer.c_str());
+}
+
+void say(const String& name, const String& message, uint16_t color = YELLOW) {
+  canvas.setTextColor(color);
+  canvas.print(name);
+  canvas.print(": ");
+  canvas.setTextColor(WHITE);
+  canvas.println(message);
+  canvas.pushSprite(8, 20);
+  Serial.printf("%s: %s\n", name.c_str(), message.c_str());
+}
+
+bool enqueueTx(const String& msg) {
+  if (!txQueue) {
+    return false;
+  }
+  RadioJob job = {};
+  copyToBuffer(job.text, sizeof(job.text), msg);
+  return xQueueSend(txQueue, &job, 0) == pdPASS;
 }
 
 void handleKeyboard() {
@@ -96,7 +124,7 @@ void handleKeyboard() {
     inputBuffer += key;
   }
 
-  if (status.del && inputBuffer.length() > 0) {
+  if (status.del && !inputBuffer.isEmpty()) {
     inputBuffer.remove(inputBuffer.length() - 1);
   }
 
@@ -105,26 +133,104 @@ void handleKeyboard() {
     msg.trim();
     inputBuffer = "";
     drawPrompt();
-    if (msg.length() > 0) {
-      if (isTxing) {
-        appendLog("System", "Radio busy, wait...", RED);
-      } else {
-        setAntenna(false);
-        radio.setPacketSentAction(setTxFlag);
-        int state = radio.startTransmit(msg);
-        if (state == RADIOLIB_ERR_NONE) {
-          isTxing = true;
-          pendingTxMessage = msg;
-        } else {
-          appendLog("System", String("TX error: ") + state, RED);
-          startListening();
-        }
+    if (!msg.isEmpty()) {
+      if (!enqueueTx(msg)) {
+        say("System", "TX queue full", RED);
       }
     }
     return;
   }
 
   drawPrompt();
+}
+
+void pumpRadioEvents() {
+  if (!eventQueue) {
+    return;
+  }
+
+  RadioEvent evt;
+  while (xQueueReceive(eventQueue, &evt, 0) == pdPASS) {
+    switch (evt.type) {
+      case RadioEventType::Rx: {
+        String meta = String((int)evt.rssi) + "dBm/" + String(evt.snr, 1) + "dB";
+        say("RX", String(evt.text) + " (" + meta + ")", GREEN);
+        break;
+      }
+      case RadioEventType::TxOk:
+        say("TX", evt.text, CYAN);
+        break;
+      case RadioEventType::TxErr:
+        say("System", String("TX error: ") + evt.status + " (" + evt.text + ")", RED);
+        break;
+      case RadioEventType::Info:
+        say("System", evt.text, ORANGE);
+        break;
+    }
+  }
+}
+
+void radioTask(void* arg) {
+  setAntenna(true);
+  restartReceive("boot");
+
+  for (;;) {
+    RadioJob job;
+    if (txQueue && xQueueReceive(txQueue, &job, 0) == pdPASS) {
+      radio.standby();
+      setAntenna(false);
+      int txState = radio.transmit(job.text);
+      setAntenna(true);
+      radio.clearIrqFlags(RADIOLIB_SX126X_IRQ_ALL);
+      restartReceive("post-tx");
+      if (txState == RADIOLIB_ERR_NONE) {
+        queueEvent(RadioEventType::TxOk, String(job.text));
+      } else {
+        queueEvent(RadioEventType::TxErr, String(job.text), 0, 0, txState);
+      }
+      continue;
+    }
+
+    uint16_t irq = radio.getIrqFlags();
+    if (irq & RADIOLIB_SX126X_IRQ_RX_DONE) {
+      String payload;
+      int rxState = radio.readData(payload);
+      radio.clearIrqFlags(RADIOLIB_SX126X_IRQ_RX_DONE |
+                          RADIOLIB_SX126X_IRQ_HEADER_ERR |
+                          RADIOLIB_SX126X_IRQ_CRC_ERR);
+      restartReceive("rx-done");
+
+      if (rxState == RADIOLIB_ERR_NONE && payload.length() > 0) {
+        float rssi = radio.getRSSI();
+        float snr = radio.getSNR();
+        queueEvent(RadioEventType::Rx, payload, rssi, snr);
+      } else if (rxState == RADIOLIB_ERR_CRC_MISMATCH) {
+        queueEvent(RadioEventType::Info, "RX CRC mismatch", 0, 0, rxState);
+      } else if (rxState != RADIOLIB_ERR_NONE) {
+        queueEvent(RadioEventType::Info, String("RX read err ") + rxState, 0, 0, rxState);
+      }
+    } else if (irq & RADIOLIB_SX126X_IRQ_TIMEOUT) {
+      radio.clearIrqFlags(RADIOLIB_SX126X_IRQ_TIMEOUT);
+      restartReceive("timeout");
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(RADIO_TASK_DELAY_MS));
+  }
+}
+
+void restartReceive(const char* reason) {
+  int state = radio.startReceive();
+  if (state != RADIOLIB_ERR_NONE) {
+    String msg = "RX start err";
+    if (reason) {
+      msg += " (";
+      msg += reason;
+      msg += ")";
+    }
+    msg += ": ";
+    msg += state;
+    queueEvent(RadioEventType::Info, msg, 0, 0, state);
+  }
 }
 
 void setup() {
@@ -147,8 +253,7 @@ void setup() {
     // P7 = RX/TX path select
     ioe.setDirection(7, true);
     ioe.setHighImpedance(7, false);
-    ioe.digitalWrite(7, true);  // Start in RX mode
-    Serial.println("Antenna: P0=HIGH (power), P7=HIGH (RX mode)");
+    ioe.digitalWrite(7, true);
   } else {
     Serial.println("Port expander not found!");
   }
@@ -166,56 +271,38 @@ void setup() {
   }
 
   radio.setCurrentLimit(140);
-  radio.setDio2AsRfSwitch(false);  // FM8625H is on port expander, not DIO2
-  radio.setPacketReceivedAction(setRxFlag);
-  
-  int canvasWidth = M5Cardputer.Display.width() - LOG_MARGIN * 2;
-  int canvasHeight = M5Cardputer.Display.height() - LOG_TOP - PROMPT_HEIGHT - 8;
-  logCanvas.createSprite(canvasWidth, canvasHeight);
-  logCanvas.fillSprite(BLACK);
-  logCanvas.setTextColor(WHITE);
-  logCanvas.setTextSize(1);
-  logCanvas.setTextScroll(true);
+  radio.setDio2AsRfSwitch(false);
 
-  drawChrome();
-  startListening();
-  appendLog("System", "Keyboard to send, always listening", ORANGE);
+  txQueue = xQueueCreate(TX_QUEUE_DEPTH, sizeof(RadioJob));
+  eventQueue = xQueueCreate(EVENT_QUEUE_DEPTH, sizeof(RadioEvent));
+  if (!txQueue || !eventQueue) {
+    M5Cardputer.Display.fillScreen(BLACK);
+    M5Cardputer.Display.setCursor(4, 4);
+    M5Cardputer.Display.setTextColor(RED);
+    M5Cardputer.Display.println("queue alloc failed");
+    while (true) delay(1000);
+  }
+
+  xTaskCreate(radioTask, "LoRaRadio", RADIO_TASK_STACK, nullptr, RADIO_TASK_PRIORITY, &radioTaskHandle);
+
+  M5Cardputer.Display.fillScreen(BLACK);
+  M5Cardputer.Display.setTextColor(WHITE);
+  M5Cardputer.Display.drawCenterString("LoRa Chat", M5Cardputer.Display.width() / 2, 4);
+  M5Cardputer.Display.drawRect(4, 18, M5Cardputer.Display.width() - 8,
+                               M5Cardputer.Display.height() - 34, BLUE);
+
+  canvas.createSprite(M5Cardputer.Display.width() - 16,
+                      M5Cardputer.Display.height() - 38);
+  canvas.setTextScroll(true);
+  canvas.fillSprite(BLACK);
+
+  say("System", "Radio task starting...", ORANGE);
   drawPrompt();
 }
 
 void loop() {
   M5Cardputer.update();
   handleKeyboard();
-
-  if (transmittedFlag) {
-    transmittedFlag = false;
-    radio.finishTransmit();
-    startListening();
-    if (pendingTxMessage.length() > 0) {
-      appendLog("TX", pendingTxMessage, CYAN);
-      pendingTxMessage = "";
-    }
-  }
-
-  if (receivedFlag) {
-    receivedFlag = false;
-
-    String payload;
-    int state = radio.readData(payload);
-
-    if (state == RADIOLIB_ERR_NONE && payload.length() > 0) {
-      float rssi = radio.getRSSI();
-      float snr = radio.getSNR();
-      String meta = String((int)rssi) + "dBm/" + String(snr, 1) + "dB";
-      appendLog("RX", payload + " (" + meta + ")", GREEN);
-    } else if (state == RADIOLIB_ERR_CRC_MISMATCH) {
-      appendLog("RX", "CRC mismatch", YELLOW);
-    } else if (state != RADIOLIB_ERR_NONE) {
-      appendLog("RX", String("err ") + state, RED);
-    }
-
-    startListening();
-  }
-
+  pumpRadioEvents();
   delay(5);
 }
