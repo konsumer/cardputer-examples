@@ -53,9 +53,6 @@ QueueHandle_t txQueue = nullptr;
 QueueHandle_t eventQueue = nullptr;
 TaskHandle_t radioTaskHandle = nullptr;
 
-void radioTask(void* arg);
-void restartReceive(const char* reason = nullptr);
-
 void copyToBuffer(char* dest, size_t size, const String& src) {
   if (!dest || size == 0) {
     return;
@@ -170,6 +167,21 @@ void pumpRadioEvents() {
   }
 }
 
+void restartReceive(const char* reason) {
+  int state = radio.startReceive();
+  if (state != RADIOLIB_ERR_NONE) {
+    String msg = "RX start err";
+    if (reason) {
+      msg += " (";
+      msg += reason;
+      msg += ")";
+    }
+    msg += ": ";
+    msg += state;
+    queueEvent(RadioEventType::Info, msg, 0, 0, state);
+  }
+}
+
 void radioTask(void* arg) {
   setAntenna(true);
   restartReceive("boot");
@@ -218,26 +230,16 @@ void radioTask(void* arg) {
   }
 }
 
-void restartReceive(const char* reason) {
-  int state = radio.startReceive();
-  if (state != RADIOLIB_ERR_NONE) {
-    String msg = "RX start err";
-    if (reason) {
-      msg += " (";
-      msg += reason;
-      msg += ")";
-    }
-    msg += ": ";
-    msg += state;
-    queueEvent(RadioEventType::Info, msg, 0, 0, state);
-  }
-}
-
 void setup() {
   auto cfg = M5.config();
   M5Cardputer.begin(cfg, true);
   M5Cardputer.Display.setRotation(1);
   Serial.begin(115200);
+
+  unsigned long startTime = millis();
+  while (millis() - startTime < 1000 && !Serial.available()) {}
+
+  Serial.printf("LoRA settings: FREQ:%.02f BW:%.02f SF:%d CR:%d SW:%.02x TX:%d PRE:%d\n", LORA_FREQ, LORA_BW, LORA_SF, LORA_CR, LORA_SYNC_WORD, LORA_TX_POWER, LORA_PREAMBLE_LEN);
 
   // I2C for port expander
   if (!m5::In_I2C.begin(I2C_NUM_0, 8, 9)) {
