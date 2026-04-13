@@ -1,5 +1,5 @@
 #!/bin/bash
-# set -e
+set -e
 
 # Loop through all projects & build/publish (on m5burner)
 
