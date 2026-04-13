@@ -4,7 +4,7 @@
     "description": "Simple example that can display graphics, check out the repo to see how it's done.",
     "category": "cardputer",
     "author": "konsumer",
-    "version": "0.0.0",
+    "version": "0.0.1",
     "github": "https://github.com/konsumer/cardputer-examples"
   },
   "files": {

@@ -27,6 +27,8 @@ jobs:
         run: pip install --upgrade platformio
 
       - name: Build & Publish PlatformIO Project
+        env:
+          M5_AUTH_TOKEN: ${{ secrets.M5_AUTH_TOKEN }}
         run: ./build_and_publish.sh
 
       - name: Upload firmware release assets
