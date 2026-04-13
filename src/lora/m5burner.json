@@ -4,7 +4,7 @@
     "description": "Simple example that can TX/RX radio, check out the repo to see how it's done. Requires 1262 LoRA CAP.",
     "category": "cardputer",
     "author": "konsumer",
-    "version": "0.0.1",
+    "version": "0.1.0",
     "github": "https://github.com/konsumer/cardputer-examples"
   },
   "files": {
