@@ -1,7 +1,6 @@
 name: PlatformIO Build
 
 on:
-  push:
   release:
     types: [published]
 
@@ -27,6 +26,13 @@ jobs:
         run: pip install --upgrade platformio
 
       - name: Build & Publish PlatformIO Project
+        if: github.event_name == 'release'
+        env:
+          M5_AUTH_TOKEN: ${{ secrets.M5_AUTH_TOKEN }}
+        run: ./build_and_publish.sh publish
+
+      - name: Build PlatformIO Project
+        if: github.event_name != 'release'
         env:
           M5_AUTH_TOKEN: ${{ secrets.M5_AUTH_TOKEN }}
         run: ./build_and_publish.sh
