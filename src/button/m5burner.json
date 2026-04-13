@@ -1,0 +1,14 @@
+{
+  "fields": {
+    "name": "Konsumer Examples - Button",
+    "description": "Simple example that can show when BOOT button is pressed, check out the repo to see how it's done.",
+    "category": "cardputer",
+    "author": "konsumer",
+    "version": "0.0.0",
+    "github": "https://github.com/konsumer/cardputer-examples"
+  },
+  "files": {
+    "firmware": "./button.bin",
+    "cover": "./button.png"
+  }
+}

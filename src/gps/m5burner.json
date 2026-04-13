@@ -1,0 +1,14 @@
+{
+  "fields": {
+    "name": "Konsumer Examples - GPS",
+    "description": "Simple example that can show your position, check out the repo to see how it's done. Requires 1262 LoRA CAP.",
+    "category": "cardputer",
+    "author": "konsumer",
+    "version": "0.0.0",
+    "github": "https://github.com/konsumer/cardputer-examples"
+  },
+  "files": {
+    "firmware": "./gps.bin",
+    "cover": "./gps.png"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "fields": {
+    "name": "Konsumer Examples - Motion",
+    "description": "Simple example that can read accelerometer/gyro, check out the repo to see how it's done.",
+    "category": "cardputer",
+    "author": "konsumer",
+    "version": "0.0.0",
+    "github": "https://github.com/konsumer/cardputer-examples"
+  },
+  "files": {
+    "firmware": "./motion.bin",
+    "cover": "./motion.png"
+  }
+}

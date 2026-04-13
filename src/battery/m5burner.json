@@ -1,0 +1,14 @@
+{
+  "fields": {
+    "name": "Konsumer Examples - Battery",
+    "description": "Simple example that can show battery-level, check out the repo to see how it's done.",
+    "category": "cardputer",
+    "author": "konsumer",
+    "version": "0.0.0",
+    "github": "https://github.com/konsumer/cardputer-examples"
+  },
+  "files": {
+    "firmware": "./battery.bin",
+    "cover": "./battery.png"
+  }
+}
