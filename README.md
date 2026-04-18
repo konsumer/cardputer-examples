@@ -20,7 +20,7 @@ These use [Lora Cap 1262](https://docs.m5stack.com/en/cap/Cap_LoRa-1262):
 
 These require other hardware:
 
-- [sound](./src/8encoder) - test [8encoder](https://docs.m5stack.com/en/unit/8Encoder)
+- [8encoder](./src/8encoder) - test [8encoder](https://docs.m5stack.com/en/unit/8Encoder)
 
 
 
