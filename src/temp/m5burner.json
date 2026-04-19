@@ -1,7 +1,7 @@
 {
   "fields": {
     "name": "Konsumer Examples - Temp",
-    "description": "Simple example that can show AHT21 temp/humidity sensing, check out the repo to see how it's done.",
+    "description": "Simple example that can show AHT21 temp/humidity sensing, and i2c, in general, check out the repo to see how it's done.",
     "category": "cardputer",
     "author": "konsumer",
     "version": "0.1.0",

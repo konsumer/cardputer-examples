@@ -4,7 +4,7 @@
     "description": "Simple example that can show 8encoder unit state, check out the repo to see how it's done.",
     "category": "cardputer",
     "author": "konsumer",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "github": "https://github.com/konsumer/cardputer-examples"
   },
   "files": {
