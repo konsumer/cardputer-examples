@@ -21,7 +21,7 @@ These use [Lora Cap 1262](https://docs.m5stack.com/en/cap/Cap_LoRa-1262):
 These require other hardware:
 
 - [8encoder](./src/8encoder) - test [8encoder](https://docs.m5stack.com/en/unit/8Encoder)
-
+- [temp](./src/temp) - test [AHT21 Temperature/Humidity](https://www.amazon.com/dp/B0DXKYK1XB) Sensor
 
 
 ## building
