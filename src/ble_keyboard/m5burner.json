@@ -1,0 +1,14 @@
+{
+  "fields": {
+    "name": "Konsumer Examples - Bluetooth Keyboard",
+    "description": "Simple example that can act as a BLE keyboard, check out the repo to see how it's done.",
+    "category": "cardputer",
+    "author": "konsumer",
+    "version": "0.1.0",
+    "github": "https://github.com/konsumer/cardputer-examples"
+  },
+  "files": {
+    "firmware": "./ble_keyboard.bin",
+    "cover": "./ble_keyboard.png"
+  }
+}
