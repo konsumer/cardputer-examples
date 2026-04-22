@@ -1,5 +1,7 @@
 #!/bin/bash
-set -e
+
+# exit on error
+# set -e
 
 # Loop through all projects & build/publish (on m5burner)
 # run with "publish" arg to publish
