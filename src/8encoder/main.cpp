@@ -51,7 +51,7 @@ void show_encoder_value() {
     canvas->setTextSize(1);
     canvas->setTextColor(YELLOW);
     canvas->setCursor(0, 0);
-    canvas->printf("8-Encoder");
+    canvas->print("8-Encoder");
 
     for (int i = 0; i < 8; i++) {
         int      row = i < 4 ? 0 : 1;
